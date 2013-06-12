@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 # crazyflie_node.py
 #
@@ -21,7 +22,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-#!/usr/bin/env python
 import rospy
 import logging
  
@@ -29,6 +29,7 @@ import cflib.crtp
 from cfclient.utils.logconfigreader import LogConfig
 from cfclient.utils.logconfigreader import LogVariable
 from cflib.crazyflie import Crazyflie
+from std_msgs.msg import UInt16
 from std_msgs.msg import UInt32
 from std_msgs.msg import Float32
 from std_msgs.msg import String
@@ -55,6 +56,11 @@ class CrazyflieNode:
         self.thrust = 0
         self.yaw = 0.0
 
+        self.cmd_thrust = 0
+        self.cmd_pitch = 0.0
+        self.cmd_roll = 0.0
+        self.cmd_yaw = 0.0
+        
         # Init the callbacks for the crazyflie lib
         self.crazyflie = Crazyflie()
         cflib.crtp.init_drivers()
@@ -63,9 +69,10 @@ class CrazyflieNode:
         rospy.init_node('crazyflie')
         
         # Init the published topics for ROS
-        self.link_status_pub  = rospy.Publisher('link_status', String)
+        self.link_status_pub  = rospy.Publisher('link_status', String, latch=True)
         self.link_quality_pub = rospy.Publisher('link_quality', Float32)
         self.packet_count_pub = rospy.Publisher('packet_count', UInt32)
+
         self.motor_status_pub = rospy.Publisher('motors', String)
 
         self.pitch_pub        = rospy.Publisher('stabilizer/pitch', Float32)
@@ -73,6 +80,8 @@ class CrazyflieNode:
         self.thrust_pub       = rospy.Publisher('stabilizer/thrust', Float32)
         self.yaw_pub          = rospy.Publisher('stabilizer/yaw', Float32)
  
+        rospy.Subscriber('thrust', UInt16, self.set_thrust)
+
         # Connection callbacks
         self.crazyflie.connectionInitiated.add_callback(self.connectionInitiated)
         self.crazyflie.connectSetupFinished.add_callback(self.connectSetupFinished)
@@ -95,8 +104,12 @@ class CrazyflieNode:
 
     def connectionInitiated(self, linkURI):
         self.link_status = "Connection Initiated"
+        self.link_status_pub.publish(self.link_status)
 
     def connectSetupFinished(self, linkURI):
+        
+        self.link_status = "Connect Setup Finished"
+        self.link_status_pub.publish(self.link_status)
         
         self.setupStabilizerLog()
 
@@ -158,15 +171,19 @@ class CrazyflieNode:
     def connected(self, linkURI):
         self.packetsSinceConnection = 0
         self.link_status = "Connected"
+        self.link_status_pub.publish(self.link_status)
 
     def disconnected(self, linkURI):
         self.link_status = "Disconnected"
+        self.link_status_pub.publish(self.link_status)
      
     def connectionLost(self, linkURI, errmsg):
         self.link_status = "Connection Lost - " + errmsg
+        self.link_status_pub.publish(self.link_status)
  
     def connectionFailed(self, linkURI, errmsg):
         self.link_status = "Connection Failed - " + errmsg
+        self.link_status_pub.publish(self.link_status)
  
     def linkQuality(self, percentage):
         self.link_quality = percentage
@@ -188,8 +205,11 @@ class CrazyflieNode:
         self.thrust = data["stabilizer.thrust"]
         self.yaw    = data["stabilizer.yaw"]
 
+    def set_thrust(self, data):
+        rospy.loginfo(rospy.get_name() + ": Setting thrust to: %d" % data.data)
+        self.cmd_thrust = data.data
+
     def run_node(self):
-        self.link_status_pub.publish(self.link_status)
         self.link_quality_pub.publish(self.link_quality)
         self.packet_count_pub.publish(self.packetsSinceConnection)
         self.motor_status_pub.publish(self.motor_status)
@@ -197,6 +217,10 @@ class CrazyflieNode:
         self.roll_pub.publish(self.roll)
         self.thrust_pub.publish(self.thrust)
         self.yaw_pub.publish(self.yaw)
+        
+        # Send commands to the Crazyflie
+#        rospy.loginfo(rospy.get_name() + ": Sending setpoint: %f, %f, %f, %d" % (self.cmd_roll, self.cmd_pitch, self.cmd_yaw, self.cmd_thrust))
+        self.crazyflie.commander.send_setpoint(self.cmd_roll, self.cmd_pitch, self.cmd_yaw, self.cmd_thrust)
          
 def run():
     rospy.init_node('crazyflie')
