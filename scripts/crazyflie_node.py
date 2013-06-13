@@ -65,10 +65,7 @@ class CrazyflieNode:
         self.crazyflie = Crazyflie()
         cflib.crtp.init_drivers()
 
-        # Init the ROS node
-        rospy.init_node('crazyflie')
-        
-        # Init the published topics for ROS
+        # Init the published topics for ROS, for this class
         self.link_status_pub  = rospy.Publisher('link_status', String, latch=True)
         self.link_quality_pub = rospy.Publisher('link_quality', Float32)
         self.packet_count_pub = rospy.Publisher('packet_count', UInt32)
@@ -83,6 +80,9 @@ class CrazyflieNode:
         rospy.Subscriber('thrust', UInt16, self.set_thrust)
 
         # Connection callbacks
+        #TODO: for a lot of these, we just update the status and/or publish a value
+        # it would be sweet if we could create a generic function to do that for us,
+        # instead of using all of these callbacks.
         self.crazyflie.connectionInitiated.add_callback(self.connectionInitiated)
         self.crazyflie.connectSetupFinished.add_callback(self.connectSetupFinished)
         self.crazyflie.connected.add_callback(self.connected)
@@ -94,6 +94,7 @@ class CrazyflieNode:
         self.crazyflie.linkQuality.add_callback(self.linkQuality)
         self.crazyflie.receivedPacket.add_callback(self.receivedPacket)
         
+        #TODO: should be configurable, and support multiple devices
         self.crazyflie.open_link("radio://0/10/250K")
  
     def shut_down(self):
@@ -223,8 +224,11 @@ class CrazyflieNode:
         self.crazyflie.commander.send_setpoint(self.cmd_roll, self.cmd_pitch, self.cmd_yaw, self.cmd_thrust)
          
 def run():
+    # Init the ROS node here, so we can split functionality
+    # for this node across multiple classes        
     rospy.init_node('crazyflie')
 
+    #TODO: organize this into several classes that monitor/control one specific thing
     node = CrazyflieNode()
     while not rospy.is_shutdown():
         node.run_node()
